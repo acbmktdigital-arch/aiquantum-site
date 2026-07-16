@@ -1,0 +1,6 @@
+{
+  "name": "AI QUANTUM",
+  "description": "Site institucional e landing page da AI QUANTUM, especializada na instalação e integração de Inteligência Artificial para otimização de processos, vendas e atendimento empresarial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

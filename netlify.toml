@@ -1,0 +1,12 @@
+# Configuração de deploy do Netlify
+# As funções em netlify/functions/ respondem em /api/* (via config.path).
+
+[build]
+  command = "vite build"
+  publish = "dist"
+
+# SPA: qualquer rota que não seja arquivo ou função cai no index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
