@@ -139,14 +139,22 @@ function getGeminiClient(): GoogleGenAI | null {
 async function callGemini(ai: GoogleGenAI, prompt: string): Promise<string | null> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite",
-        contents: prompt,
-      });
+      // Teto de 9s por tentativa: uma chamada travada não pode consumir
+      // o tempo total da função serverless (o lead recebe o fallback).
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("gemini-timeout-9s")), 9000)
+      );
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: prompt,
+        }),
+        timeout,
+      ]);
       if (response.text) return response.text;
       console.warn(`Gemini retornou vazio (tentativa ${attempt}).`);
     } catch (error: any) {
-      console.error(`Erro na chamada Gemini (tentativa ${attempt}):`, error?.status || error);
+      console.error(`Erro na chamada Gemini (tentativa ${attempt}):`, error?.status || error?.message || error);
     }
     if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
   }
