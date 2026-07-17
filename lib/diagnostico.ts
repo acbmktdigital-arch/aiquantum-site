@@ -35,7 +35,7 @@ Você recebeu os resultados do Questionário Raio-X de Maturidade Digital de uma
 As notas individuais das 15 perguntas (de 0 a 10) foram:
 ${JSON.stringify(answers, null, 2)}
 
-Gere um Relatório Diagnóstico Raio-X personalizado de altíssimo nível, com NO MÁXIMO 400 palavras no total. O relatório deve ser escrito em português do Brasil, em tom encorajador, altamente profissional, executivo, sofisticado e cirúrgico (sem enrolação, mas muito profundo). Use termos do mercado corporativo e de tecnologia (ex: automação de fluxos, integração de sistemas, eficiência operacional, CRM, inteligência artificial, canais integrados, KPIs).
+Gere um Relatório Diagnóstico Raio-X personalizado de altíssimo nível. O relatório deve ser escrito em português do Brasil, em tom encorajador, altamente profissional, executivo, sofisticado e cirúrgico (sem enrolação, mas muito profundo). Use termos do mercado corporativo e de tecnologia (ex: automação de fluxos, integração de sistemas, eficiência operacional, CRM, inteligência artificial, canais integrados, KPIs).
 O relatório deve conter exatamente as seguintes seções estruturadas em Markdown:
 ### 📊 1. Nível Geral de Maturidade Digital e Operações
 Uma análise sincera e de alto nível da maturidade digital e operacional da empresa (se ela se comporta como Operação Manual, Em Digitalização ou Empresa Inteligente/Conectada) baseado em sua média geral e na harmonia dos scores. Destaque o que ela já faz de excelente.
@@ -161,6 +161,33 @@ async function callGemini(ai: GoogleGenAI, prompt: string): Promise<string | nul
   return null;
 }
 
+// Chamada SEM pressa, usada só pelo relatório do consultor, que roda
+// numa Netlify Background Function (limite de 15 min). Por isso usa o
+// modelo completo gemini-3.5-flash, sem limite de palavras. Teto de
+// 90s por tentativa apenas para não pendurar em uma chamada travada.
+async function callGeminiFull(ai: GoogleGenAI, prompt: string): Promise<string | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("gemini-timeout-90s")), 90000)
+      );
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: prompt,
+        }),
+        timeout,
+      ]);
+      if (response.text) return response.text;
+      console.warn(`Gemini (full) retornou vazio (tentativa ${attempt}).`);
+    } catch (error: any) {
+      console.error(`Erro na chamada Gemini full (tentativa ${attempt}):`, error?.status || error?.message || error);
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
+
 // Versão COMERCIAL exibida ao lead — gerada no fim do quiz.
 export async function generateLeadReport(
   scores: CategoryScores,
@@ -177,9 +204,9 @@ export async function generateLeadReport(
   return { text: raw || buildFallbackReport(overallAverage), fromAI: Boolean(raw) };
 }
 
-// Versão TÉCNICA para o consultor — gerada apenas quando o lead pede a
-// Sessão 1A1 (o lead não está esperando na tela nesse momento, e assim
-// cada função serverless faz só UMA chamada de IA, dentro do limite).
+// Versão TÉCNICA completa para o consultor — gerada quando o lead pede a
+// Sessão 1A1, numa Background Function (sem limite apertado de tempo).
+// Usa o modelo completo (callGeminiFull) e o prompt sem limite de palavras.
 export async function generateConsultantReport(
   scores: CategoryScores,
   answers: Record<string, number>
@@ -190,7 +217,7 @@ export async function generateConsultantReport(
     console.warn("GEMINI_API_KEY ausente — usando fallback do consultor.");
     return { text: buildConsultantFallback(scores, overallAverage), fromAI: false };
   }
-  const raw = await callGemini(ai, buildConsultantPrompt(scores, answers));
+  const raw = await callGeminiFull(ai, buildConsultantPrompt(scores, answers));
   if (!raw) console.warn("Versão do consultor falhou — usando fallback do consultor.");
   return { text: raw || buildConsultantFallback(scores, overallAverage), fromAI: Boolean(raw) };
 }

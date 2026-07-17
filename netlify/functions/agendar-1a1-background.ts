@@ -1,9 +1,11 @@
 import { generateConsultantReport, saveLeadToSheet } from "../../lib/diagnostico";
 
-// Função serverless (Netlify): chamada quando o lead clica em
-// "Agendar Diagnóstico Gratuito 1A1" na tela de resultado.
-// Marca o lead na planilha e dispara o e-mail com o relatório
-// para o consultor (feito pelo Apps Script).
+// BACKGROUND FUNCTION (sufixo "-background"): o Netlify responde 202 na
+// hora e executa isto em segundo plano por até 15 min. Por isso o
+// relatório do consultor pode usar o modelo completo do Gemini, sem
+// limite de palavras — o lead não espera por esta resposta (o site já
+// abriu o WhatsApp). Mantemos o path /api/agendar-1a1 para o frontend
+// não mudar.
 export const config = {
   path: "/api/agendar-1a1",
 };
@@ -25,8 +27,8 @@ export default async function handler(req: Request): Promise<Response> {
     return Response.json({ error: "Dados do lead são obrigatórios" }, { status: 400 });
   }
 
-  // A versão técnica é gerada agora (o lead não espera por esta chamada):
-  // o Apps Script grava na coluna "Relatório Consultor" e envia por e-mail.
+  // Gera a versão técnica COMPLETA (sem pressa) e grava na planilha;
+  // o Apps Script preenche a coluna "Relatório Consultor" e envia o e-mail.
   let reportConsultor = "";
   if (scores) {
     reportConsultor = (await generateConsultantReport(scores, answers || {})).text;
