@@ -28,12 +28,15 @@ export default async function handler(req: Request): Promise<Response> {
     return Response.json({ error: "Scores are required" }, { status: 400 });
   }
 
-  // Gera SÓ a versão do lead aqui (limite de ~10s por função no Netlify);
+  // Gera SÓ a versão do lead aqui (limite de tempo por função no Netlify);
   // a versão técnica do consultor é gerada em /api/agendar-1a1.
-  const { text } = await generateLeadReport(scores, answers || {});
+  const t0 = Date.now();
+  const { text, fromAI } = await generateLeadReport(scores, answers || {});
+  const genMs = Date.now() - t0;
 
   // Salva o lead antes de responder (em serverless a execução termina
   // junto com a resposta, então não pode ser "fire and forget").
+  const t1 = Date.now();
   await saveLeadToSheet({
     type: "novo_lead",
     lead: lead || {},
@@ -41,6 +44,8 @@ export default async function handler(req: Request): Promise<Response> {
     overallAverage: computeOverallAverage(scores),
     report: text,
   });
+  const sheetMs = Date.now() - t1;
 
-  return Response.json({ text });
+  // meta: diagnóstico de latência (o frontend ignora)
+  return Response.json({ text, meta: { genMs, sheetMs, fromAI } });
 }
