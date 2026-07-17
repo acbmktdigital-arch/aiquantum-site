@@ -65,6 +65,8 @@ function doPost(e) {
   }
 
   // ---- Lead clicou em "Agendar 1A1" ----
+  // A versão técnica (reportConsultor) chega NESTA chamada: é gerada
+  // pelo servidor no momento do clique e gravada na coluna 13.
   if (dados.type === "solicitou_1a1") {
     var valores = aba.getDataRange().getValues();
     var linha = -1;
@@ -74,20 +76,24 @@ function doPost(e) {
       if (valores[i][2] === lead.email) { linha = i + 1; break; }
     }
 
-    var relatorioTecnico = "";
+    var relatorioTecnico = dados.reportConsultor || "";
     var indice = dados.overallAverage || "";
 
     if (linha > 0) {
       aba.getRange(linha, 12).setValue("Sim");
-      // Prioridade: versão técnica (col 13) > versão do lead (col 11) > enviada na chamada
-      relatorioTecnico = valores[linha - 1][12] || valores[linha - 1][10] || dados.report || "";
+      if (relatorioTecnico) {
+        aba.getRange(linha, 13).setValue(relatorioTecnico);
+      } else {
+        // Sem versão técnica na chamada: usa a que estiver salva, ou a do lead
+        relatorioTecnico = valores[linha - 1][12] || valores[linha - 1][10] || dados.report || "";
+      }
       if (!indice) indice = valores[linha - 1][9];
     } else {
       // Lead não encontrado (ex: falha anterior) — cria a linha agora
-      relatorioTecnico = dados.report || "";
+      if (!relatorioTecnico) relatorioTecnico = dados.report || "";
       aba.appendRow([
         new Date(), lead.name || "", lead.email || "", lead.phone || "",
-        "", "", "", "", "", indice, dados.report || "", "Sim", ""
+        "", "", "", "", "", indice, dados.report || "", "Sim", relatorioTecnico
       ]);
     }
 
@@ -144,8 +150,8 @@ do site, adicione as mesmas duas variáveis (`APPS_SCRIPT_URL` e
 
 | Momento | O que acontece |
 |---|---|
-| Lead termina o quiz e preenche o formulário | Linha nova na aba **Leads** com dados, notas e **duas versões do relatório**: a simplificada que o lead viu (col. "Relatório (Lead)") e a técnica (col. "Relatório Consultor"). Coluna "Solicitou 1A1" = **Não** |
-| Lead clica em **"Agendar Diagnóstico Gratuito 1A1"** | Coluna vira **Sim** + consultor recebe **e-mail** com a versão **técnica** do relatório e os contatos do lead |
+| Lead termina o quiz e preenche o formulário | Linha nova na aba **Leads** com dados, notas e o relatório simplificado que o lead viu (col. "Relatório (Lead)"). Coluna "Solicitou 1A1" = **Não** |
+| Lead clica em **"Agendar Diagnóstico Gratuito 1A1"** | O servidor gera a **versão técnica** naquele momento; a coluna "Solicitou 1A1" vira **Sim**, a versão técnica é gravada na col. "Relatório Consultor" e o consultor recebe o **e-mail** com ela + contatos do lead |
 
 ### Observações
 

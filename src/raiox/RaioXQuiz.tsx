@@ -206,7 +206,10 @@ Seus menores indicadores apontam um gargalo crítico em Atendimento e Processos 
       body: JSON.stringify({
         lead: { name: leadName, email: leadEmail, phone: leadPhone },
         overallAverage: result.overallAverage,
-        report: result.aiReport
+        report: result.aiReport,
+        // Notas e respostas para o servidor gerar a versão técnica do consultor
+        scores: result.scores,
+        answers: result.answers
       })
     }).catch((err) => console.warn("Falha ao registrar pedido de 1A1:", err));
   };

@@ -1,4 +1,4 @@
-import { saveLeadToSheet } from "../../lib/diagnostico";
+import { generateConsultantReport, saveLeadToSheet } from "../../lib/diagnostico";
 
 // Função serverless (Netlify): chamada quando o lead clica em
 // "Agendar Diagnóstico Gratuito 1A1" na tela de resultado.
@@ -20,9 +20,16 @@ export default async function handler(req: Request): Promise<Response> {
     return Response.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { lead, overallAverage, report } = body || {};
+  const { lead, overallAverage, report, scores, answers } = body || {};
   if (!lead || (!lead.email && !lead.name)) {
     return Response.json({ error: "Dados do lead são obrigatórios" }, { status: 400 });
+  }
+
+  // A versão técnica é gerada agora (o lead não espera por esta chamada):
+  // o Apps Script grava na coluna "Relatório Consultor" e envia por e-mail.
+  let reportConsultor = "";
+  if (scores) {
+    reportConsultor = (await generateConsultantReport(scores, answers || {})).text;
   }
 
   await saveLeadToSheet({
@@ -30,6 +37,7 @@ export default async function handler(req: Request): Promise<Response> {
     lead,
     overallAverage,
     report,
+    reportConsultor,
   });
 
   return Response.json({ ok: true });

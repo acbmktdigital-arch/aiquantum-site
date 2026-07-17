@@ -1,5 +1,5 @@
 import {
-  generateReports,
+  generateLeadReport,
   saveLeadToSheet,
   computeOverallAverage,
 } from "../../lib/diagnostico";
@@ -28,7 +28,9 @@ export default async function handler(req: Request): Promise<Response> {
     return Response.json({ error: "Scores are required" }, { status: 400 });
   }
 
-  const { leadText, consultantText } = await generateReports(scores, answers || {});
+  // Gera SÓ a versão do lead aqui (limite de ~10s por função no Netlify);
+  // a versão técnica do consultor é gerada em /api/agendar-1a1.
+  const { text } = await generateLeadReport(scores, answers || {});
 
   // Salva o lead antes de responder (em serverless a execução termina
   // junto com a resposta, então não pode ser "fire and forget").
@@ -37,10 +39,8 @@ export default async function handler(req: Request): Promise<Response> {
     lead: lead || {},
     scores,
     overallAverage: computeOverallAverage(scores),
-    report: leadText,
-    reportConsultor: consultantText,
+    report: text,
   });
 
-  // O lead recebe apenas a versão comercial
-  return Response.json({ text: leadText });
+  return Response.json({ text });
 }

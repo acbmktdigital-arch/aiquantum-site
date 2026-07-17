@@ -3,7 +3,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import {
-  generateReports,
+  generateLeadReport,
+  generateConsultantReport,
   saveLeadToSheet,
   computeOverallAverage,
 } from "./lib/diagnostico";
@@ -25,19 +26,19 @@ async function startServer() {
         return res.status(400).json({ error: "Scores are required" });
       }
 
-      const { leadText, consultantText } = await generateReports(scores, answers || {});
+      // Mesmo fluxo da produção: só a versão do lead aqui; a técnica
+      // é gerada em /api/agendar-1a1.
+      const { text } = await generateLeadReport(scores, answers || {});
 
       await saveLeadToSheet({
         type: "novo_lead",
         lead: lead || {},
         scores,
         overallAverage: computeOverallAverage(scores),
-        report: leadText,
-        reportConsultor: consultantText,
+        report: text,
       });
 
-      // O lead recebe apenas a versão comercial
-      res.json({ text: leadText });
+      res.json({ text });
     } catch (error: any) {
       console.error("Erro no diagnóstico:", error);
       res.status(500).json({ error: error.message || "Erro interno do servidor ao gerar diagnóstico" });
@@ -48,9 +49,15 @@ async function startServer() {
   // envia o relatório por e-mail ao consultor.
   app.post("/api/agendar-1a1", async (req, res) => {
     try {
-      const { lead, overallAverage, report } = req.body;
+      const { lead, overallAverage, report, scores, answers } = req.body;
       if (!lead || (!lead.email && !lead.name)) {
         return res.status(400).json({ error: "Dados do lead são obrigatórios" });
+      }
+
+      // Versão técnica gerada agora (o lead não espera por esta chamada)
+      let reportConsultor = "";
+      if (scores) {
+        reportConsultor = (await generateConsultantReport(scores, answers || {})).text;
       }
 
       await saveLeadToSheet({
@@ -58,6 +65,7 @@ async function startServer() {
         lead,
         overallAverage,
         report,
+        reportConsultor,
       });
 
       res.json({ ok: true });

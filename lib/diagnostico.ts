@@ -35,7 +35,7 @@ Você recebeu os resultados do Questionário Raio-X de Maturidade Digital de uma
 As notas individuais das 15 perguntas (de 0 a 10) foram:
 ${JSON.stringify(answers, null, 2)}
 
-Gere um Relatório Diagnóstico Raio-X personalizado de altíssimo nível. O relatório deve ser escrito em português do Brasil, em tom encorajador, altamente profissional, executivo, sofisticado e cirúrgico (sem enrolação, mas muito profundo). Use termos do mercado corporativo e de tecnologia (ex: automação de fluxos, integração de sistemas, eficiência operacional, CRM, inteligência artificial, canais integrados, KPIs).
+Gere um Relatório Diagnóstico Raio-X personalizado de altíssimo nível, com NO MÁXIMO 400 palavras no total. O relatório deve ser escrito em português do Brasil, em tom encorajador, altamente profissional, executivo, sofisticado e cirúrgico (sem enrolação, mas muito profundo). Use termos do mercado corporativo e de tecnologia (ex: automação de fluxos, integração de sistemas, eficiência operacional, CRM, inteligência artificial, canais integrados, KPIs).
 O relatório deve conter exatamente as seguintes seções estruturadas em Markdown:
 ### 📊 1. Nível Geral de Maturidade Digital e Operações
 Uma análise sincera e de alto nível da maturidade digital e operacional da empresa (se ela se comporta como Operação Manual, Em Digitalização ou Empresa Inteligente/Conectada) baseado em sua média geral e na harmonia dos scores. Destaque o que ela já faz de excelente.
@@ -64,6 +64,7 @@ ${JSON.stringify(answers, null, 2)}
 Escreva um Relatório Diagnóstico personalizado e direto para esse empresário, em português do Brasil.
 
 REGRAS OBRIGATÓRIAS DE LINGUAGEM:
+- O relatório completo deve ter NO MÁXIMO 350 palavras.
 - Fale como quem conversa com um dono de negócio, não com um técnico.
 - PROIBIDO usar termos técnicos, siglas ou nomes de ferramentas/aplicativos. Não escreva CRM, KPI, pipeline, funil, dashboard, ERP, follow-up, leads, chatbot, API, software específico ou nome de qualquer aplicativo. Use expressões simples como "controle de clientes", "acompanhamento de vendas", "respostas automáticas", "indicadores do negócio".
 - Foque em DINHEIRO e TEMPO: onde a empresa está perdendo vendas, deixando clientes esperando ou gastando horas em tarefa manual — e o quanto pode melhorar.
@@ -119,46 +120,9 @@ Priorizar na sessão as duas áreas de menor score acima. Padrão típico: ausê
 3. **Operações**: integrar estoque/finanças em painel de indicadores com alertas automáticos.`;
 }
 
-// Até 2 tentativas: erros 503 ("model overloaded") do Gemini são
-// transitórios e costumam passar em segundos.
-async function callGemini(ai: GoogleGenAI, prompt: string): Promise<string | null> {
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-      });
-      if (response.text) return response.text;
-      console.warn(`Gemini retornou vazio (tentativa ${attempt}).`);
-    } catch (error: any) {
-      console.error(`Erro na chamada Gemini (tentativa ${attempt}):`, error?.status || error);
-    }
-    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
-  }
-  return null;
-}
-
-// Gera as DUAS versões do relatório em paralelo (mesma latência de uma):
-// - leadText: comercial, sem jargão — exibida na tela de resultado;
-// - consultantText: técnica completa — vai para a planilha e para o
-//   e-mail do consultor.
-// Fallbacks independentes: se uma chamada falhar, só ela usa o texto padrão.
-export async function generateReports(
-  scores: CategoryScores,
-  answers: Record<string, number>
-): Promise<{ leadText: string; consultantText: string; fromAI: boolean }> {
-  const overallAverage = computeOverallAverage(scores);
-
-  if (!process.env.GEMINI_API_KEY) {
-    console.warn("GEMINI_API_KEY ausente — usando relatórios de fallback.");
-    return {
-      leadText: buildFallbackReport(overallAverage),
-      consultantText: buildConsultantFallback(scores, overallAverage),
-      fromAI: false,
-    };
-  }
-
-  const ai = new GoogleGenAI({
+function getGeminiClient(): GoogleGenAI | null {
+  if (!process.env.GEMINI_API_KEY) return null;
+  return new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
     httpOptions: {
       headers: {
@@ -166,20 +130,61 @@ export async function generateReports(
       },
     },
   });
+}
 
-  const [leadRaw, consultantRaw] = await Promise.all([
-    callGemini(ai, buildLeadPrompt(scores, answers)),
-    callGemini(ai, buildConsultantPrompt(scores, answers)),
-  ]);
+// Até 2 tentativas: erros 503 ("model overloaded") do Gemini são
+// transitórios. Modelo flash-lite + relatórios curtos: a resposta
+// precisa caber no limite de ~10s das funções do Netlify (o 3.5-flash
+// levava ~30s e estourava o limite).
+async function callGemini(ai: GoogleGenAI, prompt: string): Promise<string | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-lite",
+        contents: prompt,
+      });
+      if (response.text) return response.text;
+      console.warn(`Gemini retornou vazio (tentativa ${attempt}).`);
+    } catch (error: any) {
+      console.error(`Erro na chamada Gemini (tentativa ${attempt}):`, error?.status || error);
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
+  }
+  return null;
+}
 
-  if (!leadRaw) console.warn("Versão do lead falhou — usando fallback do lead.");
-  if (!consultantRaw) console.warn("Versão do consultor falhou — usando fallback do consultor.");
+// Versão COMERCIAL exibida ao lead — gerada no fim do quiz.
+export async function generateLeadReport(
+  scores: CategoryScores,
+  answers: Record<string, number>
+): Promise<{ text: string; fromAI: boolean }> {
+  const overallAverage = computeOverallAverage(scores);
+  const ai = getGeminiClient();
+  if (!ai) {
+    console.warn("GEMINI_API_KEY ausente — usando fallback do lead.");
+    return { text: buildFallbackReport(overallAverage), fromAI: false };
+  }
+  const raw = await callGemini(ai, buildLeadPrompt(scores, answers));
+  if (!raw) console.warn("Versão do lead falhou — usando fallback do lead.");
+  return { text: raw || buildFallbackReport(overallAverage), fromAI: Boolean(raw) };
+}
 
-  return {
-    leadText: leadRaw || buildFallbackReport(overallAverage),
-    consultantText: consultantRaw || buildConsultantFallback(scores, overallAverage),
-    fromAI: Boolean(leadRaw && consultantRaw),
-  };
+// Versão TÉCNICA para o consultor — gerada apenas quando o lead pede a
+// Sessão 1A1 (o lead não está esperando na tela nesse momento, e assim
+// cada função serverless faz só UMA chamada de IA, dentro do limite).
+export async function generateConsultantReport(
+  scores: CategoryScores,
+  answers: Record<string, number>
+): Promise<{ text: string; fromAI: boolean }> {
+  const overallAverage = computeOverallAverage(scores);
+  const ai = getGeminiClient();
+  if (!ai) {
+    console.warn("GEMINI_API_KEY ausente — usando fallback do consultor.");
+    return { text: buildConsultantFallback(scores, overallAverage), fromAI: false };
+  }
+  const raw = await callGemini(ai, buildConsultantPrompt(scores, answers));
+  if (!raw) console.warn("Versão do consultor falhou — usando fallback do consultor.");
+  return { text: raw || buildConsultantFallback(scores, overallAverage), fromAI: Boolean(raw) };
 }
 
 export interface SheetPayload {
